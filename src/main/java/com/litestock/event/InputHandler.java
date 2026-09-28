@@ -140,6 +140,12 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
         return searchMatchedItems != null;
     }
 
+
+    /** 重置扫描位置，强制下次 tick 重新扫描高亮。 */
+    public static void forceRescan() {
+        lastSearchX = Integer.MIN_VALUE;
+        lastSearchZ = Integer.MIN_VALUE;
+    }
     /** 扫玩家周围的展示框 + 孤立展示方块，高亮展示位置本身。 */
     private static List<BlockPos> scanVisibleAround(Minecraft mc, Set<Item> matchedItems) {
         List<BlockPos> result = new ArrayList<>();
@@ -152,7 +158,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
             if (entity instanceof net.minecraft.world.entity.decoration.ItemFrame frame) {
                 net.minecraft.world.item.ItemStack stack = frame.getItem();
                 if (!stack.isEmpty() && matchedItems.contains(stack.getItem())) {
-                    if (countNearbyContainers(frame.blockPosition(), containers) >= 2) {
+                    if (stack.getMaxStackSize() <= 1 || countNearbyContainers(frame.blockPosition(), containers) >= 2) {
                         result.add(frame.blockPosition().immutable());
                     }
                 }
@@ -377,6 +383,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
             searchMatchedItems = matchedItems;
             lastSearchX = Integer.MIN_VALUE;
             lastSearchZ = Integer.MIN_VALUE;
+            searchReported = false;
             Minecraft mc = Minecraft.getInstance();
             mc.player.sendSystemMessage(Component.literal(
                     "[LiteStock] 搜索模式：'" + q + "'，走到哪扫到哪，打开箱子自动退出"
@@ -417,7 +424,6 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
         }
     }
 
-    /** 常见中文错字/同音字规范化，方便打错字也能搜到。 */
 
     /** 从本地存储找匹配物品的坐标。 */
     private static List<BlockPos> searchLocalPoints(Set<Item> matchedItems) {
@@ -445,7 +451,6 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
             if (action != KeyAction.PRESS) return false;
             if (mc.player == null) return false;
             mc.player.sendSystemMessage(Component.literal("[LiteStock] 添加方块热键触发, hitResult=" + mc.hitResult));
-            if (!inGame(mc)) return false;
 
             Item foundItem = null;
             BlockPos foundPos = null;
