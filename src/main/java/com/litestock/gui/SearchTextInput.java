@@ -6,6 +6,7 @@ import com.litestock.render.ChestHighlightRenderer;
 import com.litestock.scan.ContainerCache;
 import com.litestock.scan.ContainerProbe;
 import fi.dy.masa.malilib.gui.GuiTextInput;
+import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
 import fi.dy.masa.malilib.interfaces.IStringConsumer;
@@ -27,39 +28,42 @@ public class SearchTextInput extends GuiTextInput {
     public void initGui() {
         super.initGui();
 
-        // 用反射拿到 super 加的三个按钮（确定/重置/取消），读最后一个的位置
         int btnW = 80;
         int gap = 4;
+
+        // 删掉 super 自动加的"重置"按钮，后面的按钮左移
+        try {
+            List<ButtonBase> buttons = collectButtons();
+            ButtonBase resetBtn = null;
+            for (ButtonBase b : buttons) {
+                if (getButtonText(b).equals("重置")) {
+                    resetBtn = b;
+                    break;
+                }
+            }
+            if (resetBtn != null) {
+                buttons.remove(resetBtn);
+                for (ButtonBase b : buttons) {
+                    if (b.getX() > resetBtn.getX()) {
+                        b.setX(b.getX() - btnW - gap);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LiteStock.LOGGER.error("删重置按钮失败", e);
+        }
+
         int y = this.height / 2 + 22;
         int startX = this.width / 2;
 
         try {
-            // 遍历 this 的所有字段，找 ButtonBase 类型的按钮
-            java.util.List<fi.dy.masa.malilib.gui.button.ButtonBase> buttons = new java.util.ArrayList<>();
-            Class<?> cls = this.getClass();
-            while (cls != null) {
-                for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
-                    if (List.class.isAssignableFrom(f.getType())) {
-                        f.setAccessible(true);
-                        Object val = f.get(this);
-                        if (val instanceof List<?> list) {
-                            for (Object o : list) {
-                                if (o instanceof fi.dy.masa.malilib.gui.button.ButtonBase b) {
-                                    buttons.add(b);
-                                }
-                            }
-                        }
-                    }
-                }
-                cls = cls.getSuperclass();
-            }
+            List<ButtonBase> buttons = collectButtons();
             if (!buttons.isEmpty()) {
-                // 找最右边的按钮
-                fi.dy.masa.malilib.gui.button.ButtonBase rightmost = buttons.get(0);
-                for (var b : buttons) {
+                ButtonBase rightmost = buttons.get(0);
+                for (ButtonBase b : buttons) {
                     if (b.getX() > rightmost.getX()) rightmost = b;
                 }
-                startX = rightmost.getX() + rightmost.getWidth() + 4;
+                startX = rightmost.getX() + rightmost.getWidth() + gap;
                 y = rightmost.getY();
             }
         } catch (Exception e) {
@@ -73,9 +77,45 @@ public class SearchTextInput extends GuiTextInput {
         this.addButton(startScan, new StartScanListener());
     }
 
+    private String getButtonText(ButtonBase b) {
+        try {
+            java.lang.reflect.Field f = b.getClass().getDeclaredField("displayString");
+            f.setAccessible(true);
+            Object val = f.get(b);
+            return val != null ? val.toString() : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ButtonBase> collectButtons() {
+        List<ButtonBase> result = new java.util.ArrayList<>();
+        Class<?> cls = this.getClass();
+        while (cls != null) {
+            for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+                if (List.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    try {
+                        Object val = f.get(this);
+                        if (val instanceof List<?> list) {
+                            for (Object o : list) {
+                                if (o instanceof ButtonBase b) {
+                                    result.add(b);
+                                }
+                            }
+                        }
+                    } catch (IllegalAccessException ignored) {}
+                }
+            }
+            cls = cls.getSuperclass();
+        }
+        return result;
+    }
+
     private static class ClearCacheListener implements IButtonActionListener {
         @Override
-        public void actionPerformedWithButton(fi.dy.masa.malilib.gui.button.ButtonBase button, int mouseButton) {
+        public void actionPerformedWithButton(ButtonBase button, int mouseButton) {
             ContainerCache.getInstance().clear();
             Minecraft mc = Minecraft.getInstance();
             if (mc.player != null) {
@@ -87,7 +127,7 @@ public class SearchTextInput extends GuiTextInput {
 
     private static class StartScanListener implements IButtonActionListener {
         @Override
-        public void actionPerformedWithButton(fi.dy.masa.malilib.gui.button.ButtonBase button, int mouseButton) {
+        public void actionPerformedWithButton(ButtonBase button, int mouseButton) {
             Minecraft mc = Minecraft.getInstance();
             List<BlockPos> selected = LiteStockConfig.get().getSelectedContainerPositions();
             if (selected.isEmpty()) return;

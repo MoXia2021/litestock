@@ -40,6 +40,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
     // 动态搜索状态：null=未搜索，非null=正在搜索这个物品集合
     private static Set<Item> searchMatchedItems = null;
     private static int lastSearchX = Integer.MIN_VALUE, lastSearchZ = Integer.MIN_VALUE;
+    private static boolean searchReported = false;
 
     public InputHandler() {
         Hotkeys.OPEN_CONFIG_GUI.getKeybind().setCallback(new KeyCallbackOpenConfigGui());
@@ -47,6 +48,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
         Hotkeys.ADD_CONTAINER.getKeybind().setCallback(new KeyCallbackAddContainer());
         Hotkeys.CLEAR_SELECTION.getKeybind().setCallback(new KeyCallbackClearSelection());
         Hotkeys.SEARCH_ITEM.getKeybind().setCallback(new KeyCallbackSearchItem());
+        Hotkeys.ADD_SEARCH_BLOCK.getKeybind().setCallback(new KeyCallbackAddSearchBlock());
     }
 
     @Override
@@ -83,14 +85,30 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
             lastSearchX = center.getX();
             lastSearchZ = center.getZ();
 
-            // 缓存命中的箱子 + 周围展示方块扫到的箱子，合并高亮
+            // 缓存命中 + 周围扫描 + 本地存储，合并高亮
             List<BlockPos> cacheResults = searchCache(searchMatchedItems);
             List<BlockPos> visible = scanVisibleAround(mc, searchMatchedItems);
+            List<BlockPos> localResults = searchLocalPoints(searchMatchedItems);
             Set<BlockPos> merged = new java.util.LinkedHashSet<>();
             merged.addAll(cacheResults);
             merged.addAll(visible);
+            merged.addAll(localResults);
             ChestHighlightRenderer.getInstance().setHighlightedChests(new ArrayList<>(merged));
             LiteStockConfig.get().highlightEnabled = true;
+
+            if (!searchReported) {
+                searchReported = true;
+                int total = merged.size();
+                if (total > 0) {
+                    mc.player.sendSystemMessage(Component.literal(
+                            "[LiteStock] 命中缓存 " + cacheResults.size() + " 个，周围找到 " + visible.size() + " 个，本地存储 " + localResults.size() + " 个，共 " + total + " 个"
+                    ).withStyle(ChatFormatting.GREEN));
+                } else {
+                    mc.player.sendSystemMessage(Component.literal(
+                            "[LiteStock] 未找到该物品，建议用「添加方块」热键对准展示框/方块手动存储坐标"
+                    ).withStyle(ChatFormatting.YELLOW));
+                }
+            }
         }
     }
 
@@ -400,6 +418,74 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
     }
 
     /** 常见中文错字/同音字规范化，方便打错字也能搜到。 */
+
+    /** 从本地存储找匹配物品的坐标。 */
+    private static List<BlockPos> searchLocalPoints(Set<Item> matchedItems) {
+        List<BlockPos> result = new ArrayList<>();
+        for (String entry : LiteStockConfig.get().localSearchPoints) {
+            String[] parts = entry.split(";");
+            if (parts.length != 4) continue;
+            try {
+                String regPath = parts[0];
+                for (Item item : matchedItems) {
+                    if (BuiltInRegistries.ITEM.getKey(item).toString().equals(regPath)) {
+                        result.add(new BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), Integer.parseInt(parts[3])));
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return result;
+    }
+
+    private static class KeyCallbackAddSearchBlock implements IHotkeyCallback {
+        @Override
+        public boolean onKeyAction(KeyAction action, IKeybind key) {
+            Minecraft mc = Minecraft.getInstance();
+            if (action != KeyAction.PRESS) return false;
+            if (mc.player == null) return false;
+            mc.player.sendSystemMessage(Component.literal("[LiteStock] 添加方块热键触发, hitResult=" + mc.hitResult));
+            if (!inGame(mc)) return false;
+
+            Item foundItem = null;
+            BlockPos foundPos = null;
+
+            if (mc.hitResult instanceof net.minecraft.world.phys.EntityHitResult entityHit
+                    && entityHit.getEntity() instanceof net.minecraft.world.entity.decoration.ItemFrame frame) {
+                net.minecraft.world.item.ItemStack stack = frame.getItem();
+                if (!stack.isEmpty()) {
+                    foundItem = stack.getItem();
+                    foundPos = frame.blockPosition();
+                }
+            }
+            else if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult blockHit) {
+                BlockPos pos = blockHit.getBlockPos();
+                Block block = mc.level.getBlockState(pos).getBlock();
+                Item item = block.asItem();
+                if (item != null && item != net.minecraft.world.item.Items.AIR) {
+                    foundItem = item;
+                    foundPos = pos;
+                }
+            }
+
+            if (foundItem == null || foundPos == null) {
+                mc.player.sendSystemMessage(Component.literal("[LiteStock] 准星未对准展示框或方块").withStyle(ChatFormatting.RED));
+                return true;
+            }
+
+            String regPath = BuiltInRegistries.ITEM.getKey(foundItem).toString();
+            String entry = regPath + ";" + foundPos.getX() + ";" + foundPos.getY() + ";" + foundPos.getZ();
+            if (!LiteStockConfig.get().localSearchPoints.contains(entry)) {
+                LiteStockConfig.get().localSearchPoints.add(entry);
+                LiteStockConfig.save();
+                String name = new net.minecraft.world.item.ItemStack(foundItem).getHoverName().getString();
+                mc.player.sendSystemMessage(Component.literal("[LiteStock] 已存储: " + name + " @ " + foundPos.toShortString()).withStyle(ChatFormatting.GREEN));
+            } else {
+                mc.player.sendSystemMessage(Component.literal("[LiteStock] 已存在该记录").withStyle(ChatFormatting.YELLOW));
+            }
+            return true;
+        }
+    }
     private static String normalize(String s) {
         return s.replace('栓', '拴');
     }
