@@ -117,6 +117,11 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
         ChestHighlightRenderer.getInstance().clear();
     }
 
+    /** 是否正在物品搜索模式（搜索高亮优先级最高，HUD 不应覆盖）。 */
+    public static boolean isSearching() {
+        return searchMatchedItems != null;
+    }
+
     /** 扫玩家周围的展示框 + 孤立展示方块，高亮展示位置本身。 */
     private static List<BlockPos> scanVisibleAround(Minecraft mc, Set<Item> matchedItems) {
         List<BlockPos> result = new ArrayList<>();
@@ -129,7 +134,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
             if (entity instanceof net.minecraft.world.entity.decoration.ItemFrame frame) {
                 net.minecraft.world.item.ItemStack stack = frame.getItem();
                 if (!stack.isEmpty() && matchedItems.contains(stack.getItem())) {
-                    if (countNearbyContainers(frame.blockPosition(), containers) >= 4) {
+                    if (countNearbyContainers(frame.blockPosition(), containers) >= 2) {
                         result.add(frame.blockPosition().immutable());
                     }
                 }
@@ -156,7 +161,7 @@ public class InputHandler implements IKeybindProvider, IKeyboardInputHandler, IM
                     if (!matchedBlocks.contains(b)) continue;
                     foundRaw++;
                     int run = countHorizontalRun(mc.level, mPos, b);
-                    if (run <= 2 && countNearbyContainers(mPos, containers) >= 4) {
+                    if (run <= 2 && countNearbyContainers(mPos, containers) >= 2) {
                         result.add(mPos.immutable());
                     } else {
                         filtered++;
